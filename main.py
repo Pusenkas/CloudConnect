@@ -8,41 +8,11 @@ from cloudconnect.VPN import VPN
 from cloudconnect.DNS import DNS
 from cloudconnect.utils import random_ip, random_port
 
-
-def test_no_network_functions():
-    orchestrator = Orchestrator()
-    app1 = Component("application 1", "app", None, ip := random_ip(), port := random_port(), connect_data={
-                     'ip': ip, 'port': port})
-    app2 = Component("application 2", "app", None, ip := random_ip(), port := random_port(), connect_data={
-                     'ip': ip, 'port': port})
-    app1.register(orchestrator)
-    app2.register(orchestrator)
-
-    res = app1.get_data(orchestrator, "application 2")
-
-    print("SIMPLE TEST")
-    print(f"Data before orchestration: {app2.connect_data}\nData after orchestration:  {res}\n")
+import networkx as nx
+import matplotlib.pyplot as plt
 
 
-def test_nat():
-    orchestrator = Orchestrator()
-    app1 = Component("application 1", "app", None, ip := random_ip(), port := random_port(), connect_data={
-                     'ip': ip, 'port': port})
-    app2 = Component("application 2", "app", None, ip := random_ip(), port := random_port(), connect_data={
-                     'ip': ip, 'port': port})
-    app1.register(orchestrator)
-    app2.register(orchestrator)
-    nat = NAT("nat1", random_ip(), ip_network("10.0.10.0/24"))
-    nat.add_under_nat("app3", 80, local_ip=ip_address("10.0.10.1"), data={"port": {
-        "__PORT__": 80}, "ssh": "ahhahahahahahahahahaah", "ip": {"__IP_ADDRESS__": ip_address("10.0.10.1")}})
-    nat.register(orchestrator)
-    res = orchestrator.get_data("app3")
-
-    print("NAT TEST")
-    print(f"Data before orchestration: {nat._under[0].connect_data}\nData after orchestration:  {res}\n")
-
-
-def test_dns():
+def test_dns(): #todo
     orchestrator = Orchestrator()
     app1 = Component("application 1", "app", None, ip := random_ip(), port := random_port(), connect_data={
                      'ip': ip, 'port': port})
@@ -63,7 +33,7 @@ def test_dns():
     print(f"Data before orchestration: {app3.connect_data}\nData after orchestration:  {res}\n")
 
 
-def test_firewall():
+def test_firewall(): #todo
     orchestrator = Orchestrator()
     app1 = Component("application 1", "app", None, ip := ip_address("192.12.13.24"), port :=
                      random_port(), connect_data={'ip': ip_address("192.12.13.24"), 'port': port})
@@ -84,7 +54,7 @@ def test_firewall():
     print(f"Data before orchestration: {firewall._under[0].connect_data}\nData after orchestration:  {res}\n")
 
 
-def test_vpn():
+def test_vpn(): #todo
     orchestrator = Orchestrator()
     app1 = Component("application 1", "app", None, ip := ip_address("192.12.13.24"), port :=
                      random_port(), connect_data={'ip': ip_address("192.12.13.24"), 'port': port})
@@ -104,11 +74,29 @@ def test_vpn():
 
 
 def main():
-    test_no_network_functions()
-    test_nat()
-    test_dns()
-    test_firewall()
-    test_vpn()
+    app1 = Component("app 1", "app", None, ip := ip_address("192.12.13.24"), port :=
+                     random_port(), connect_data={'ip': ip_address("192.12.13.24"), 'port': port})
+    app2 = Component("router", "app", None, ip := random_ip(), port := random_port(), connect_data={
+                     'ip': ip, 'port': port})
+    app3 = Component("app 3", "app", None, ip := ip_address("10.0.10.1"), port := 80, connect_data={
+                     "port": "__DST__PORT__", "ssh": "ahhahahahahahahahahaah", "ip": "__DST__IP__"})
+    nat = NAT("nat1", random_ip(), ip_network("10.0.10.0/24"))
+    nat.add_rule(ip_address("10.0.10.1"), 80)
+
+    g = nx.Graph()
+    g.add_nodes_from([(app.name, {"value": app}) for i, app in enumerate((app1, app2, nat, app3))])
+    g.add_edges_from(
+        [("app 1", "router", {"value": 0}),  #  ▁▁▁▁        ______        ___        _____
+         ("router", "nat1", {"value": 0}),   # |app 1| ---- |router| ---- |nat| ---- |app 3|
+         ("nat1", "app 3", {"value": 1})])   #  ▔▔▔       ▔▔▔▔       ▔▔       ▔▔▔
+    orchestrator = Orchestrator(g)
+    res = orchestrator.get_data("app 3", app1)
+
+    fig = plt.figure()
+    edge_color = ['g' if g[u][v]["value"] else 'b' for u, v in g.edges]
+    node_color = ['b' if isinstance(node[1]["value"], Component) else 'g' for node in g.nodes(data=True)]
+    nx.draw(g, with_labels=True, edge_color=edge_color, node_color=node_color, ax=fig.add_subplot())
+    fig.savefig("graph.png")
 
 
 if __name__ == "__main__":

@@ -1,88 +1,70 @@
 from dataclasses import dataclass, field
 from copy import deepcopy
+from ipaddress import IPv4Address
 import networkx as nx
 from .NAT import NAT
 from .Component import Component
+from .Firewall import Firewall
+
+
+@dataclass
+class ConnectionData:
+    src_ip: IPv4Address
+    dst_ip: IPv4Address
+    src_port: int
+    dst_port: int
+
+    def __iter__(self):
+        yield from (self.src_ip, self.dst_ip, self.src_port, self.dst_port)
 
 
 @dataclass
 class Orchestrator:
     pool: nx.Graph
-    nats: list = field(default_factory=lambda: [])
-    dns: list = field(default_factory=lambda: [])
-    firewals: list = field(default_factory=lambda: [])
-    vpns: list = field(default_factory=lambda: [])
-    tags = ("__SRC_IP__", "__DST__IP__", "__SRC__PORT__", "__DST__PORT__")
+    tags = ("__SRC__IP__", "__DST__IP__", "__SRC__PORT__", "__DST__PORT__")
 
     def get_data(self, name: str, request_from_comp) -> dict | None:
-        '''Get data for establishing connection with component with specified name'''
+        '''Gets data for establishing connection with component using specified name'''
         comp = self.pool.nodes[name]["value"]
-        data = deepcopy(comp.connect_data)
+        connection_data = ConnectionData(src_ip=request_from_comp.ip, dst_ip=comp.ip,
+                                         src_port=request_from_comp.port, dst_port=comp.port)
         path = next(nx.shortest_simple_paths(self.pool, name, request_from_comp.name))
 
-        for key, value in zip(self.tags, (request_from_comp.ip, comp.ip, request_from_comp.port, comp.port)):
-            Orchestrator._prepare_data(data, key, value)
         for i, node_name in enumerate(path[1:-1], start=1):
             match self.pool.nodes[node_name]["value"]:
                 case NAT() as x:
-                    if self.pool[path[i]][path[i + 1]]["value"] == 1:
+                    if self.pool[path[i]][path[i + 1]]["value"] == x.name: # transform src
                         pass
-                        #print("transform dest")
-                    if self.pool[path[i - 1]][path[i]]["value"] == 1:
-                        Orchestrator._parse_data(
-                            data, "__DST__IP__", comp.ip, x.ip)
-                        Orchestrator._parse_data(
-                            data, "__DST__PORT__", comp.port, x.find_rule(comp.ip, comp.port))
-                        #print("transform src")
+                    if self.pool[path[i - 1]][path[i]]["value"] == x.name: # transform dst
+                        connection_data.dst_port = x.find_rule(connection_data.dst_ip, connection_data.dst_port)
+                        connection_data.dst_ip = x.ip
+                case Firewall() as x:
+                    if self.pool[path[i]][path[i + 1]]["value"] == x.name: # transform src
+                        pass
+                    if self.pool[path[i - 1]][path[i]]["value"] == x.name: # transform dst
+                        accept = x.get_rule(connection_data.src_ip, connection_data.dst_ip, connection_data.dst_port)
+                        if not accept:
+                            raise ConnectionError("Firewall error")
                 case Component() as x:
                     pass
                 case _:
                     pass
-        for tag in self.tags:
-            Orchestrator._clear_data(data, tag)
+        data = deepcopy(comp.connect_data)
+        for value, tag in zip(connection_data, self.tags):
+            Orchestrator._prepare_data(data, tag, value)
         return data
 
-    def _parse_data(data, lookup_key, check, value):
-        '''Modify connection data to be sufficient'''
-        if isinstance(data, dict):
-            for k, v in data.items():
-                if v == {lookup_key: check}:
-                    data[k] = {lookup_key: value}
-                else:
-                    Orchestrator._parse_data(v, lookup_key, check, value)
-        elif isinstance(data, list):
-            for i, item in enumerate(data):
-                if item == {lookup_key: check}:
-                    data[i] = {lookup_key: value}
-                else:
-                    Orchestrator._parse_data(item, lookup_key, check, value)
-
-    def _clear_data(data, lookup_key):
-        '''Remove redundant data in connection data'''
-        if isinstance(data, dict):
-            for k, v in data.items():
-                if isinstance(v, dict) and v.keys() == {lookup_key}:
-                    data[k] = v[lookup_key]
-                else:
-                    Orchestrator._clear_data(v, lookup_key)
-        elif isinstance(data, list):
-            for i, item in enumerate(data):
-                if isinstance(v, dict) and v.keys() == {lookup_key}:
-                    data[k] = v[lookup_key]
-                else:
-                    Orchestrator._clear_data(item, lookup_key)
-
     def _prepare_data(data, lookup_key, value):
-        '''Sets initial values in connection data'''
+        '''Orchestrates data'''
         if isinstance(data, dict):
             for k, v in data.items():
                 if v == lookup_key:
-                    data[k] = {lookup_key: value}
+                    data[k] = value
                 else:
                     Orchestrator._prepare_data(v, lookup_key, value)
         elif isinstance(data, list):
             for i, item in enumerate(data):
                 if item == lookup_key:
-                    data[i] = {lookup_key: value}
+                    data[i] = value
                 else:
                     Orchestrator._prepare_data(item, lookup_key, value)

@@ -1,22 +1,19 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ipaddress import IPv4Address, IPv4Network
-from .Orchestrator import Orchestrator
 from .Component import Component
 
 
 @dataclass
 class Firewall:
     name: str
-    rules: dict[(IPv4Network, IPv4Network, int), bool]
-    _under: list[Component]
-
-    def add_under_firewall(self, name: str, port: int, local_ip: IPv4Address, data: dict = {}, type: str = "app"):
-        '''Add component under Firewall'''
-        self._under.append(Component(name, type, None, local_ip, port, data))
+    rules: dict[(IPv4Network, IPv4Network, int), bool] = field(default_factory= lambda: {})
 
     def add_rule(self, src_ip: IPv4Network, dst_ip: IPv4Network, dst_port: int, accept: bool):
         self.rules[(src_ip, dst_ip, dst_port)] = accept
-
-    def register(self, orchestrator: Orchestrator):
-        '''Register Firewall in Orchestrator'''
-        orchestrator.firewals.append(self)
+        
+    def get_rule(self, src_ip: IPv4Address, dst_ip: IPv4Address, dst_port: int) -> bool:
+        for (rule_src_ip, rule_dst_ip, rule_dst_port), accept in self.rules.items():
+            if (dst_port == rule_dst_port and src_ip in rule_src_ip and dst_ip in rule_dst_ip):
+                return accept
+        return True
+        

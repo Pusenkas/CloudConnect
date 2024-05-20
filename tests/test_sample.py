@@ -11,13 +11,12 @@ import networkx as nx
 import pytest
 
 
-
 class TestClass:
     def test_no_network_functions(self):
         app1 = Component("app 1", "app", None, ip1 := random_ip(), port1 := random_port(), connect_data={
-            'ip_to': "__DST__IP__", "ip_from": "__SRC__IP__", "port_to": "__DST__PORT__", 'port_from': "__SRC__PORT__"})
+            'ip_to': "__DST__IP__", 'ip_from': "__SRC__IP__", 'port_to': "__DST__PORT__", 'port_from': "__SRC__PORT__"})
         app2 = Component("app 2", "app", None, ip2 := random_ip(), port2 := random_port(), connect_data={
-            'ip_to': "__DST__IP__", "ip_from": "__SRC__IP__", "port_to": "__DST__PORT__", 'port_from': "__SRC__PORT__"})
+            'ip_to': "__DST__IP__", 'ip_from': "__SRC__IP__", 'port_to': "__DST__PORT__", 'port_from': "__SRC__PORT__"})
 
         g = nx.Graph()
         g.add_nodes_from([(app.name, {"value": app}) for i, app in enumerate((app1, app2))])
@@ -26,7 +25,7 @@ class TestClass:
 
         orchestrator = Orchestrator(g)
         res = app1.get_data(orchestrator, "app 2")
-        assert res == {'ip_to': ip2, "ip_from": ip1, "port_to": port2, 'port_from': port1}
+        assert res == {'ip_to': ip2, 'ip_from': ip1, 'port_to': port2, 'port_from': port1}
 
     def test_nat(self):
         app1 = Component("app 1", "app", None, ip := random_ip(), port := random_port(), connect_data=None)
@@ -44,7 +43,6 @@ class TestClass:
              ("nat1", "app 3", {"value": "nat1"})]) 
         orchestrator = Orchestrator(g)
         res = app1.get_data(orchestrator, "app 3")
-        print(res)
         assert res == {"port": 1024, "ssh": "ssh_key", "ip": ip}
 
     def test_firewall(self):
